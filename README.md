@@ -1,2 +1,2 @@
 # Building-Detection
-Conversion of "Spacenet Building Detection" to "YOLOv8 ONNX" format with automation in Google Colab environment
+A transformative automation I prepared to generate "trained building detection data from satellite data" for a project. Automated conversion of "Spacenet Building Detection" to "YOLOv8 ONNX" format in Google Colab.
