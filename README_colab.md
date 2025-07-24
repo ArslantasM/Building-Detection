@@ -1,123 +1,88 @@
 # SpaceNet Bina Tespiti - YOLOv8 ONNX (Colab)
 
-Bu Colab notebook'u, SpaceNet veri setini kullanarak bina tespiti için YOLOv8 modelini eğitir ve ONNX formatına dönüştürür. Google Colab'in sunduğu ücretsiz GPU ve depolama kaynaklarını kullanır.
+Bu notebook, SpaceNet veri setini kullanarak bina tespiti için YOLOv8 modelini eğitir ve ONNX formatına dönüştürür.
 
-## Gereksinimler
+## Özellikler
 
-- Google hesabı
-- Google Drive'da en az 50GB boş alan
-- İnternet bağlantısı
-
-## Notebook Yapısı
-
-1. **Kurulum**
-   - GPU kontrolü
-   - Google Drive bağlantısı
-   - Gerekli paketlerin yüklenmesi
-
-2. **Veri İndirme**
-   - AWS CLI kurulumu
-   - SpaceNet veri seti indirme
-   - Arşiv çıkarma
-
-3. **Görüntü İşleme**
-   - Kontrast iyileştirme
-   - Kenar belirginleştirme
-   - Boyut düzenleme
-   - Format dönüşümü
-
-4. **Etiket Dönüşümü**
-   - GeoJSON -> YOLO formatı
-   - Koordinat normalizasyonu
-   - Etiket doğrulama
-
-5. **Veri Seti Hazırlama**
-   - Eğitim/doğrulama bölünmesi
-   - Dizin yapısı oluşturma
-   - Dosya kopyalama
-
-6. **Model Eğitimi**
-   - YOLOv8 yapılandırması
-   - Eğitim başlatma
-   - ONNX dönüşümü
-
-7. **Sonuç Kaydetme**
-   - Drive'a model kaydetme
-   - Eğitim sonuçlarını saklama
+- Tek kod bloğunda tüm işlemler
+- Progress bar ile işlem takibi
+- Otomatik veri seti indirme ve hazırlama
+- Google Drive entegrasyonu
+- Hata yönetimi ve detaylı loglama
 
 ## Kullanım
 
-1. Notebook'u Colab'de açın:
-   ```
-   File > Open notebook > GitHub > [URL'yi yapıştırın]
-   ```
+1. Notebook'u Google Colab'da açın
+2. Gerekli izinleri verin (Google Drive erişimi)
+3. Kod bloğunu çalıştırın
 
-2. GPU'yu etkinleştirin:
-   ```
-   Runtime > Change runtime type > GPU
-   ```
+## İşlem Adımları
 
-3. Google Drive'a bağlanın:
-   ```python
-   from google.colab import drive
-   drive.mount('/content/drive')
-   ```
+1. **Kurulum**
+   - Gerekli paketler yüklenir
+   - GPU kontrolü yapılır
+   - Google Drive bağlanır
 
-4. Hücreleri sırayla çalıştırın
+2. **Veri Seti İndirme**
+   - SpaceNet veri seti AWS'den indirilir
+   - İndirilen arşiv otomatik olarak açılır
+   - Eğer veri seti zaten mevcutsa, bu adım atlanır
 
-## Eğitim Parametreleri
+3. **Görüntü İşleme**
+   - TIFF görüntüler JPG formatına dönüştürülür
+   - Görüntüler normalize edilir ve iyileştirilir
+   - İşlem durumu progress bar ile gösterilir
 
-- Model: YOLOv8n
-- Epochs: 50
-- Batch Size: 16
-- Görüntü Boyutu: 640x640
-- Optimizer: AdamW
-- Learning Rate: 0.001
+4. **Etiket Dönüştürme**
+   - GeoJSON formatındaki etiketler YOLO formatına dönüştürülür
+   - Dönüştürme işlemi progress bar ile takip edilir
+
+5. **Veri Seti Hazırlama**
+   - Görüntüler eğitim ve doğrulama setlerine ayrılır (%80 eğitim, %20 doğrulama)
+   - Dosyalar ilgili dizinlere kopyalanır
+
+6. **Model Eğitimi**
+   - YOLOv8n modeli eğitilir
+   - Eğitim parametreleri:
+     - Epochs: 50
+     - Batch size: 16
+     - Görüntü boyutu: 640x640
+     - Optimizer: AdamW
+     - Learning rate: 0.001
+
+7. **ONNX Dönüşümü**
+   - Eğitilen model ONNX formatına dönüştürülür
+   - ONNX model test edilir
+
+8. **Sonuçları Kaydetme**
+   - Eğitim sonuçları Google Drive'a kaydedilir
+   - ONNX model Google Drive'a kaydedilir
 
 ## Çıktılar
 
-Google Drive'da oluşturulan dosyalar:
-- `/content/drive/MyDrive/spacenet_buildings/`: Eğitim sonuçları
-- `/content/drive/MyDrive/yolov8n.onnx`: ONNX model
+- `spacenet.yaml`: YOLOv8 yapılandırma dosyası
+- `yolov8n.onnx`: ONNX formatında model
+- `runs/detect/spacenet_buildings/`: Eğitim sonuçları ve grafikler
 
-## Performans
+## Gereksinimler
 
-- Eğitim süresi: ~4-6 saat (Colab T4 GPU)
-- RAM kullanımı: ~12GB
-- Disk kullanımı: ~50GB
-
-## Sınırlamalar
-
-1. **Colab Limitleri**:
-   - 12 saat maksimum çalışma süresi
-   - Belirli süre sonra GPU bağlantısı kopabilir
-   - Sınırlı RAM ve disk alanı
-
-2. **Veri Seti**:
-   - İndirme süresi uzun olabilir
-   - Disk alanı yetmeyebilir
-   - Drive'a kaydetme zaman alabilir
-
-## İpuçları
-
-1. **GPU Kullanımı**:
-   - Uzun işlemler için Pro sürüme geçin
-   - GPU bağlantısını kontrol edin
-   - Kullanılmadığında runtime'ı durdurun
-
-2. **Veri Yönetimi**:
-   - Önemli dosyaları Drive'a kaydedin
-   - Gereksiz dosyaları silin
-   - Checkpoint'leri saklayın
-
-3. **Hata Yönetimi**:
-   - Hata mesajlarını okuyun
-   - Runtime'ı yeniden başlatın
-   - Gerekirse hücreleri tekrar çalıştırın
+```bash
+docutils>=0.20,<0.22
+ultralytics
+geopandas
+shapely
+onnxruntime
+rasterio
+scikit-learn
+opencv-python
+awscli
+tqdm
+```
 
 ## Notlar
 
-- Ücretsiz Colab GPU'su yeterlidir
-- İnternet bağlantısı önemlidir
-- Drive yedeği önerilir
-- Uzun eğitimler için Pro sürüm düşünülebilir 
+- Veri seti büyük olduğu için indirme işlemi uzun sürebilir
+- Colab Pro önerilir (daha fazla RAM ve GPU süresi)
+- İşlemler sırasında ilerleme durumu ve istatistikler gösterilir
+- Hata durumunda detaylı bilgi verilir
+- Google Drive'da yeterli boş alan olduğundan emin olun 
