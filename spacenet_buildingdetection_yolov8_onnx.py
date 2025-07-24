@@ -12,76 +12,63 @@ from sklearn.model_selection import train_test_split
 import cv2
 import warnings
 import tqdm
-from google.colab import drive
 warnings.filterwarnings('ignore')
 
-def check_gpu():
-    """GPU durumunu kontrol et"""
-    try:
-        gpu_info = subprocess.check_output(['nvidia-smi']).decode()
-        print("GPU Bilgisi:")
-        print(gpu_info)
-    except:
-        print("GPU bulunamadı!")
-
-def install_requirements():
-    """Gerekli paketleri yükle"""
-    print("Gerekli paketler yükleniyor...")
-    packages = [
-        "docutils>=0.20,<0.22",
-        "ultralytics",
-        "geopandas",
-        "shapely",
-        "onnxruntime",
-        "rasterio",
-        "scikit-learn",
-        "opencv-python",
-        "awscli",
-        "tqdm"
-    ]
-    for package in packages:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package, "-q"])
-    print("Paket kurulumu tamamlandı!")
-
-def mount_drive():
-    """Google Drive'ı bağla"""
-    print("Google Drive bağlanıyor...")
-    drive.mount('/content/drive')
-    print("Google Drive bağlandı!")
-
-def download_dataset():
-    """SpaceNet veri setini indir"""
+def check_dataset_status():
+    """Veri seti durumunu kontrol et"""
     spacenet_file = "SN2_buildings_train_AOI_2_Vegas.tar.gz"
     extract_dir = "./spacenet"
     
-    # Eğer veri seti zaten indirilmiş ve açılmışsa atla
-    if os.path.exists(extract_dir) and os.path.exists(os.path.join(extract_dir, "AOI_2_Vegas_Train")):
-        print("Veri seti zaten mevcut, indirme ve açma işlemleri atlanıyor...")
-        return
+    print("\nDosya ve Klasör Durumu Kontrol Ediliyor...")
+    print("-" * 40)
     
-    print("SpaceNet veri seti indiriliyor...")
-    if not os.path.exists("spacenet"):
-        os.makedirs("spacenet")
-    
-    # Eğer arşiv dosyası zaten varsa indirme işlemini atla
-    if not os.path.exists(spacenet_file):
-        print("Veri seti arşivi indiriliyor...")
-        subprocess.run([
-            "aws", "s3", "cp",
-            "s3://spacenet-dataset/spacenet/SN2_buildings/tarballs/SN2_buildings_train_AOI_2_Vegas.tar.gz",
-            ".",
-            "--no-sign-request"
-        ], check=True)
+    # Arşiv dosyası kontrolü
+    if os.path.exists(spacenet_file):
+        file_size = os.path.getsize(spacenet_file) / (1024 * 1024 * 1024)  # GB cinsinden
+        print(f"✓ Arşiv dosyası mevcut: {spacenet_file}")
+        print(f"  └─ Boyut: {file_size:.2f} GB")
     else:
-        print("Arşiv dosyası zaten mevcut, indirme işlemi atlanıyor...")
+        print(f"✗ Arşiv dosyası bulunamadı: {spacenet_file}")
     
-    # Arşivi çıkart
-    print("Veri seti arşivden çıkartılıyor...")
-    subprocess.run([
-        "tar", "-xf", spacenet_file, "-C", "spacenet"
-    ], check=True)
+    # Ana klasör kontrolü
+    if os.path.exists(extract_dir):
+        print(f"✓ Ana klasör mevcut: {extract_dir}")
+        
+        # Alt klasör kontrolleri
+        subfolders = [
+            "AOI_2_Vegas_Train",
+            "AOI_2_Vegas_Train/RGB-PanSharpen",
+            "AOI_2_Vegas_Train/geojson/buildings"
+        ]
+        
+        all_subfolders_exist = True
+        for subfolder in subfolders:
+            full_path = os.path.join(extract_dir, subfolder)
+            if os.path.exists(full_path):
+                file_count = len([f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))])
+                print(f"  ├─ ✓ Alt klasör mevcut: {subfolder}")
+                print(f"  │   └─ İçerik: {file_count} dosya")
+            else:
+                print(f"  ├─ ✗ Alt klasör eksik: {subfolder}")
+                all_subfolders_exist = False
+        
+        if all_subfolders_exist:
+            print("  └─ Tüm gerekli alt klasörler mevcut ve dolu")
+        else:
+            print("  └─ Bazı alt klasörler eksik veya boş!")
+    else:
+        print(f"✗ Ana klasör bulunamadı: {extract_dir}")
     
-    print("Veri seti hazır!")
+    print("\nİşlem önerisi:")
+    if not os.path.exists(spacenet_file):
+        print("- Arşiv dosyası eksik. Lütfen veri setini indirin.")
+        return False
+    elif not os.path.exists(extract_dir) or not all_subfolders_exist:
+        print("- Arşiv dosyası mevcut ama açılmamış. Arşiv açılacak.")
+        return True
+    else:
+        print("- Tüm dosya ve klasörler hazır. İşleme devam edilebilir.")
+        return True
 
 def normalize_image(img):
     """Görüntüyü normalize et ve kontrastı artır"""
@@ -128,135 +115,145 @@ def geojson_to_yolo(geojson_path, image_size, out_path):
         print(f"Uyarı: {os.path.basename(geojson_path)} dönüştürülemedi: {e}")
         return False
 
-def process_images():
-    """Görüntüleri işle ve etiketleri dönüştür"""
-    src_dir = "./spacenet/AOI_2_Vegas_Train/RGB-PanSharpen"
-    dst_dir = "./spacenet/RGB-Converted"
-    label_dir = "./spacenet/labels"
+# Veri seti durumunu kontrol et
+if not check_dataset_status():
+    print("\nLütfen veri setini indirip tekrar deneyin.")
+    sys.exit(1)
 
-    os.makedirs(dst_dir, exist_ok=True)
-    os.makedirs(label_dir, exist_ok=True)
+# SpaceNet veri setini hazırla
+spacenet_file = "SN2_buildings_train_AOI_2_Vegas.tar.gz"
+extract_dir = "./spacenet"
 
-    # Görüntüleri dönüştür
-    files = [f for f in os.listdir(src_dir) if f.endswith('.tif') and "AOI_2_Vegas_img" in f]
-    converted = 0
-    skipped = 0
+# Eğer veri seti klasörü yoksa veya eksik/boşsa, arşivi aç
+if not os.path.exists(extract_dir) or not os.path.exists(os.path.join(extract_dir, "AOI_2_Vegas_Train")):
+    print("\nVeri seti arşivden çıkartılıyor...")
+    if not os.path.exists("spacenet"):
+        os.makedirs("spacenet")
+    subprocess.run(["tar", "-xf", spacenet_file, "-C", "spacenet"], check=True)
+    print("Veri seti hazır!")
 
-    print("\nGörüntüler işleniyor...")
-    for file in tqdm.tqdm(files, desc="Görüntü İşleme"):
-        img_id = file.split("RGB-PanSharpen_")[-1].replace(".tif", "")
-        geojson_path = os.path.join("./spacenet/AOI_2_Vegas_Train/geojson/buildings", f"buildings_{img_id}.geojson")
-        
-        if not os.path.exists(geojson_path):
-            skipped += 1
-            continue
+# Görüntüleri işle
+src_dir = "./spacenet/AOI_2_Vegas_Train/RGB-PanSharpen"
+dst_dir = "./spacenet/RGB-Converted"
+label_dir = "./spacenet/labels"
 
-        src_path = os.path.join(src_dir, file)
-        try:
-            with rasterio.open(src_path) as src:
-                rgb = src.read([1, 2, 3])
-                img = reshape_as_image(rgb)
-                img = normalize_image(img)
-                img = enhance_edges(img)
-                img = resize_image(img)
-                
-                out_path = os.path.join(dst_dir, f"{img_id}.jpg")
-                Image.fromarray(img.astype(np.uint8)).save(out_path, quality=95)
-                converted += 1
-        except Exception as e:
-            print(f"\nUyarı: {file} dönüştürülemedi: {e}")
-            skipped += 1
+os.makedirs(dst_dir, exist_ok=True)
+os.makedirs(label_dir, exist_ok=True)
 
-    print(f"\nGörüntü Dönüştürme İstatistikleri:")
-    print(f"Başarılı: {converted} görüntü")
-    print(f"Atlanan: {skipped} görüntü")
+# Görüntüleri dönüştür
+files = [f for f in os.listdir(src_dir) if f.endswith('.tif') and "AOI_2_Vegas_img" in f]
+converted = 0
+skipped = 0
 
-    # Etiketleri dönüştür
-    image_size = None
-    for img_file in os.listdir(dst_dir):
-        if img_file.endswith('.jpg'):
-            with Image.open(os.path.join(dst_dir, img_file)) as img:
-                image_size = img.size
-                print(f"\nReferans görüntü boyutu: {image_size}")
-                break
+print("\nGörüntüler işleniyor...")
+for file in tqdm.tqdm(files, desc="Görüntü İşleme"):
+    img_id = file.split("RGB-PanSharpen_")[-1].replace(".tif", "")
+    geojson_path = os.path.join("./spacenet/AOI_2_Vegas_Train/geojson/buildings", f"buildings_{img_id}.geojson")
+    
+    if not os.path.exists(geojson_path):
+        skipped += 1
+        continue
 
-    if image_size:
-        converted_labels = 0
-        failed_labels = 0
-        
-        print("\nEtiketler dönüştürülüyor...")
-        for img_file in tqdm.tqdm(os.listdir(dst_dir), desc="Etiket Dönüştürme"):
-            if img_file.endswith('.jpg'):
-                img_id = img_file.replace('.jpg', '')
-                geojson_path = os.path.join("./spacenet/AOI_2_Vegas_Train/geojson/buildings", f"buildings_{img_id}.geojson")
-                label_path = os.path.join(label_dir, f"{img_id}.txt")
-                
-                if geojson_to_yolo(geojson_path, image_size, label_path):
-                    converted_labels += 1
-                else:
-                    failed_labels += 1
+    src_path = os.path.join(src_dir, file)
+    try:
+        with rasterio.open(src_path) as src:
+            rgb = src.read([1, 2, 3])
+            img = reshape_as_image(rgb)
+            img = normalize_image(img)
+            img = enhance_edges(img)
+            img = resize_image(img)
+            
+            out_path = os.path.join(dst_dir, f"{img_id}.jpg")
+            Image.fromarray(img.astype(np.uint8)).save(out_path, quality=95)
+            converted += 1
+    except Exception as e:
+        print(f"\nUyarı: {file} dönüştürülemedi: {e}")
+        skipped += 1
 
-        print(f"\nEtiket Dönüştürme İstatistikleri:")
-        print(f"Başarılı: {converted_labels} etiket")
-        print(f"Başarısız: {failed_labels} etiket")
+print(f"\nGörüntü Dönüştürme İstatistikleri:")
+print(f"Başarılı: {converted} görüntü")
+print(f"Atlanan: {skipped} görüntü")
 
-def prepare_dataset():
-    """Veri setini eğitim ve doğrulama için hazırla"""
-    dst_dir = "./spacenet/RGB-Converted"
-    label_dir = "./spacenet/labels"
+# Etiketleri dönüştür
+image_size = None
+for img_file in os.listdir(dst_dir):
+    if img_file.endswith('.jpg'):
+        with Image.open(os.path.join(dst_dir, img_file)) as img:
+            image_size = img.size
+            print(f"\nReferans görüntü boyutu: {image_size}")
+            break
 
-    # Etiketli görüntüleri listele
-    all_images = []
-    for img_file in os.listdir(dst_dir):
+if image_size:
+    converted_labels = 0
+    failed_labels = 0
+    
+    print("\nEtiketler dönüştürülüyor...")
+    for img_file in tqdm.tqdm(os.listdir(dst_dir), desc="Etiket Dönüştürme"):
         if img_file.endswith('.jpg'):
             img_id = img_file.replace('.jpg', '')
+            geojson_path = os.path.join("./spacenet/AOI_2_Vegas_Train/geojson/buildings", f"buildings_{img_id}.geojson")
             label_path = os.path.join(label_dir, f"{img_id}.txt")
-            if os.path.exists(label_path) and os.path.getsize(label_path) > 0:
-                all_images.append(img_file)
+            
+            if geojson_to_yolo(geojson_path, image_size, label_path):
+                converted_labels += 1
+            else:
+                failed_labels += 1
 
-    if len(all_images) > 0:
-        # Eğitim/doğrulama ayrımı
-        train_imgs, val_imgs = train_test_split(all_images, test_size=0.2, random_state=42)
-        
-        # Dizinleri oluştur
-        train_img_dir = "./spacenet/images/train"
-        val_img_dir = "./spacenet/images/val"
-        train_label_dir = "./spacenet/labels/train"
-        val_label_dir = "./spacenet/labels/val"
-        
-        for dir_path in [train_img_dir, val_img_dir, train_label_dir, val_label_dir]:
-            os.makedirs(dir_path, exist_ok=True)
-        
-        # Dosyaları kopyala
-        def copy_files(images, img_dir, label_dir_src, label_dir_dst):
-            copied = 0
-            print(f"\nDosyalar kopyalanıyor...")
-            for img_file in tqdm.tqdm(images, desc="Dosya Kopyalama"):
-                try:
-                    img_id = img_file.replace('.jpg', '')
-                    shutil.copy(
-                        os.path.join(dst_dir, img_file),
-                        os.path.join(img_dir, img_file)
-                    )
-                    shutil.copy(
-                        os.path.join(label_dir_src, f"{img_id}.txt"),
-                        os.path.join(label_dir_dst, f"{img_id}.txt")
-                    )
-                    copied += 1
-                except Exception as e:
-                    print(f"\nUyarı: {img_file} kopyalanamadı: {e}")
-            return copied
-        
-        train_copied = copy_files(train_imgs, train_img_dir, label_dir, train_label_dir)
-        val_copied = copy_files(val_imgs, val_img_dir, label_dir, val_label_dir)
-        
-        print(f"\nVeri Seti Ayrım İstatistikleri:")
-        print(f"Eğitim: {train_copied} görüntü")
-        print(f"Doğrulama: {val_copied} görüntü")
+    print(f"\nEtiket Dönüştürme İstatistikleri:")
+    print(f"Başarılı: {converted_labels} etiket")
+    print(f"Başarısız: {failed_labels} etiket")
 
-def create_yaml():
-    """YOLOv8 yapılandırma dosyasını oluştur"""
-    yaml_content = f"""
+# Veri setini hazırla
+all_images = []
+for img_file in os.listdir(dst_dir):
+    if img_file.endswith('.jpg'):
+        img_id = img_file.replace('.jpg', '')
+        label_path = os.path.join(label_dir, f"{img_id}.txt")
+        if os.path.exists(label_path) and os.path.getsize(label_path) > 0:
+            all_images.append(img_file)
+
+if len(all_images) > 0:
+    # Eğitim/doğrulama ayrımı
+    train_imgs, val_imgs = train_test_split(all_images, test_size=0.2, random_state=42)
+    
+    # Dizinleri oluştur
+    train_img_dir = "./spacenet/images/train"
+    val_img_dir = "./spacenet/images/val"
+    train_label_dir = "./spacenet/labels/train"
+    val_label_dir = "./spacenet/labels/val"
+    
+    for dir_path in [train_img_dir, val_img_dir, train_label_dir, val_label_dir]:
+        os.makedirs(dir_path, exist_ok=True)
+    
+    # Dosyaları kopyala
+    def copy_files(images, img_dir, label_dir_src, label_dir_dst):
+        copied = 0
+        print(f"\nDosyalar kopyalanıyor...")
+        for img_file in tqdm.tqdm(images, desc="Dosya Kopyalama"):
+            try:
+                img_id = img_file.replace('.jpg', '')
+                shutil.copy(
+                    os.path.join(dst_dir, img_file),
+                    os.path.join(img_dir, img_file)
+                )
+                shutil.copy(
+                    os.path.join(label_dir_src, f"{img_id}.txt"),
+                    os.path.join(label_dir_dst, f"{img_id}.txt")
+                )
+                copied += 1
+            except Exception as e:
+                print(f"\nUyarı: {img_file} kopyalanamadı: {e}")
+        return copied
+    
+    train_copied = copy_files(train_imgs, train_img_dir, label_dir, train_label_dir)
+    val_copied = copy_files(val_imgs, val_img_dir, label_dir, val_label_dir)
+    
+    print(f"\nVeri Seti Ayrım İstatistikleri:")
+    print(f"Eğitim: {train_copied} görüntü")
+    print(f"Doğrulama: {val_copied} görüntü")
+
+# YOLOv8 yapılandırma dosyasını oluştur
+yaml_content = f"""
 # YOLOv8 yapılandırması
 path: {os.path.abspath("./spacenet")}  # veri seti kök dizini
 train: images/train  # eğitim görüntüleri
@@ -297,89 +294,51 @@ mosaic: 1.0
 mixup: 0.0
 copy_paste: 0.0
 """
-    with open("spacenet.yaml", "w") as f:
-        f.write(yaml_content)
-    print("spacenet.yaml başarıyla oluşturuldu.")
 
-def train_model():
-    """YOLOv8 modelini eğit"""
-    from ultralytics import YOLO
+with open("spacenet.yaml", "w") as f:
+    f.write(yaml_content)
+print("spacenet.yaml başarıyla oluşturuldu.")
 
-    print("\nModel Eğitim Parametreleri:")
-    print("  - Model: YOLOv8n")
-    print("  - Epochs: 50")
-    print("  - Görüntü boyutu: 640x640")
-    print("  - Batch size: 16")
-    print("  - Optimizer: AdamW")
-    print("  - Learning rate: 0.001")
+# YOLOv8 modelini eğit
+from ultralytics import YOLO
 
-    model = YOLO("yolov8n.pt")
-    model.train(
-        data="spacenet.yaml",
-        epochs=50,
-        imgsz=640,
-        batch=16,
-        name='spacenet_buildings',
-        optimizer='AdamW',
-        lr0=0.001
-    )
-    return model
+print("\nModel Eğitim Parametreleri:")
+print("  - Model: YOLOv8n")
+print("  - Epochs: 50")
+print("  - Görüntü boyutu: 640x640")
+print("  - Batch size: 16")
+print("  - Optimizer: AdamW")
+print("  - Learning rate: 0.001")
 
-def export_onnx(model):
-    """Modeli ONNX formatına dönüştür ve test et"""
-    print("\nModel ONNX formatına dönüştürülüyor...")
-    model.export(format="onnx")
-    print("ONNX model oluşturuldu: yolov8n.onnx")
+# Yeni model oluştur
+model = YOLO('yolov8n.yaml')  # YOLOv8n modelini sıfırdan oluştur
+model.train(
+    data="spacenet.yaml",
+    epochs=50,
+    imgsz=640,
+    batch=16,
+    name='spacenet_buildings',
+    optimizer='AdamW',
+    lr0=0.001
+)
 
-    print("\nONNX model test ediliyor...")
-    import onnxruntime
-    session = onnxruntime.InferenceSession("yolov8n.onnx")
-    input_name = session.get_inputs()[0].name
-    dummy_input = np.random.rand(1, 3, 640, 640).astype(np.float32)
-    output = session.run(None, {input_name: dummy_input})
-    print("ONNX model testi başarılı!")
+# ONNX'e dönüştür ve test et
+print("\nModel ONNX formatına dönüştürülüyor...")
+model.export(format="onnx")
+print("ONNX model oluşturuldu: runs/detect/spacenet_buildings/weights/best.onnx")
 
-def save_to_drive():
-    """Sonuçları Google Drive'a kaydet"""
-    print("\nSonuçlar Google Drive'a kaydediliyor...")
-    shutil.copytree("runs/detect/spacenet_buildings", "/content/drive/MyDrive/spacenet_buildings")
-    shutil.copy("yolov8n.onnx", "/content/drive/MyDrive/")
-    print("Sonuçlar Google Drive'a başarıyla kaydedildi!")
+print("\nONNX model test ediliyor...")
+import onnxruntime
+session = onnxruntime.InferenceSession("runs/detect/spacenet_buildings/weights/best.onnx")
+input_name = session.get_inputs()[0].name
+dummy_input = np.random.rand(1, 3, 640, 640).astype(np.float32)
+output = session.run(None, {input_name: dummy_input})
+print("ONNX model testi başarılı!")
 
-def main():
-    """Ana fonksiyon"""
-    print("SpaceNet Bina Tespiti - YOLOv8 ONNX")
-    print("====================================")
-    
-    # Gerekli paketleri yükle
-    install_requirements()
-    
-    # GPU kontrolü
-    check_gpu()
-    
-    # Google Drive'ı bağla
-    mount_drive()
-    
-    # Veri setini indir
-    download_dataset()
-    
-    # Görüntüleri işle
-    process_images()
-    
-    # Veri setini hazırla
-    prepare_dataset()
-    
-    # YAML dosyasını oluştur
-    create_yaml()
-    
-    # Modeli eğit
-    model = train_model()
-    
-    # ONNX'e dönüştür
-    export_onnx(model)
-    
-    # Drive'a kaydet
-    save_to_drive()
-
-if __name__ == "__main__":
-    main()
+# Sonuçları kaydet
+print("\nSonuçlar kaydediliyor...")
+if not os.path.exists("results"):
+    os.makedirs("results")
+shutil.copytree("runs/detect/spacenet_buildings", "results/spacenet_buildings", dirs_exist_ok=True)
+shutil.copy("runs/detect/spacenet_buildings/weights/best.onnx", "results/")
+print("Sonuçlar başarıyla kaydedildi!")

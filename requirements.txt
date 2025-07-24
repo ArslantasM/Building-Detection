@@ -1,0 +1,10 @@
+docutils>=0.20,<0.22
+ultralytics
+geopandas
+shapely
+onnxruntime
+rasterio
+scikit-learn
+opencv-python
+awscli
+tqdm 
